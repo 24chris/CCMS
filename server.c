@@ -1,358 +1,251 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <netdb.h>
-#include <netinet/in.h>
 #include <string.h>
 #include <unistd.h>
-#include <stdbool.h>
-#include <time.h>
-#include <ctype.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-#define MAX_PATIENTS 100
-
- int number_of_patients = 0;
-typedef struct Patients{
-    char patient_fname[50];
-    char patient_sname[50];
-    char patient_gender[50];
-    char DOI[100];
-    char status[100];
-} patient;
-
-// Prototypes
-void add_patient(void);
-void check_status(void);
-void add_patient(void);
-void add_patient_list(void);
-void search_details(void);
-
-char User_name[50];
-char district_name[30];
-
-
-void bzero(void *a, size_t n)
+#define PORT 8080
+int extract_command(char *);
+void main()
 {
-    memset(a, 0, n);
-}
 
-void bcopy(const void *src, void *dest, size_t n)
-{
-    memmove(dest, src, n);
-}
+	int sockfd, ret;
+	struct sockaddr_in serverAddr;
 
-struct sockaddr_in *init_sockaddr_in(uint16_t port_number)
-{
-    struct sockaddr_in *socket_address = malloc(sizeof(struct sockaddr_in));
-    memset(socket_address, 0, sizeof(*socket_address));
-    socket_address->sin_family = AF_INET;
-    socket_address->sin_addr.s_addr = htonl(INADDR_ANY);
-    socket_address->sin_port = htons(port_number);
-    return socket_address;
-}
-FILE *sick_file;
-char *process_operation(char *input){
+	int newSocket;
+	struct sockaddr_in newAddr;
 
-    char *output = malloc(256);
-   
-    switch (input[0]){
-    case  '1':
-        add_patient();
-        memcpy(output,"Command 1 executed", 30);
-        return output;
-    break;
+	socklen_t addr_size;
 
-    case '2':
-         add_patient_list();
-         memcpy(output,"Command 2 executed",30);
-         return output;
-         break;
+	char buffer[256];
+	pid_t childpid;
 
-    case '3':
-        check_status();
-        memcpy(output,"Command 3 executed",30);
-        return output;
-        break;
-
-    case '4':
-        search_details();
-        memcpy(output,"Command 4 executed",30);
-        return output;
-        break;
-
-    default:
-        memcpy(output,"Command not found",30);
-        return output;
-        break;
-    }
-
-}
-
-int main(int argc, char *argv[]){
-    //  sick_file = fopen("patients.txt", "a+");
-
-    const uint16_t port_number = 4000;
-    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-
-    struct sockaddr_in *server_sockaddr = init_sockaddr_in(port_number);
-    struct sockaddr_in *client_sockaddr = malloc(sizeof(struct sockaddr_in));
-    socklen_t server_socklen = sizeof(*server_sockaddr);
-    socklen_t client_socklen = sizeof(*client_sockaddr);
-
-    if (bind(server_fd, (const struct sockaddr *)server_sockaddr, server_socklen) < 0)
-    {
-        printf("Error! Bind has failed\n");
-        exit(0);
-    }
-    if (listen(server_fd, 3) < 0) {
-        printf("Error! Can't listen\n");
-        exit(0);
-    }
-
-    //variable buffer to store strings receiver over the network
-    const size_t buffer_len = 256;
-    //memory allocation.
-    char *buffer = malloc(buffer_len * sizeof(char));
-    //char *line= malloc(buffer_len * sizeof(char));
-    char *response = NULL;
-    time_t last_operation;
-    __pid_t pid = -1;
-    char name[256];
-
-    //Run forever
-    while (1)  {
-         strcpy(name, buffer);
-
-        int client_fd = accept(server_fd, (struct sockaddr *)&client_sockaddr,&client_socklen);
-
-        pid = fork();
-
-        if (pid == 0)
-        {
-            close(server_fd);
-
-            if (client_fd == -1){
-                exit(0);
-            }
-
-            printf("\nConnection with `%d` has been established and delegated to the process %d.\nWaiting for a command...\n", client_fd, getpid());
-
-            last_operation = clock();
-
-            while (1){
-                read(client_fd, buffer, 256);
-                //printf("Name:%d", re);
-                if (!strcmp(buffer, "close"))
-                {
-                    printf("Process %d: ", getpid());
-                    close(client_fd);
-                    printf("Closing session with `%d`. Bye!\n", client_fd);
-                    break;
-                }
-
-                if (strlen(buffer) == 0)
-                {
-                    clock_t d = clock() - last_operation;
-                    double dif = 5.0 * d / CLOCKS_PER_SEC;
-
-                    if (dif > 1.0)
-                    {
-                        printf("Process %d: ", getpid());
-                        close(client_fd);
-                        printf("Connection timed out after %.3lf seconds. ", dif);
-                        printf("Closing session with `%d`. Bye!\n", client_fd);
-                        break;
-                    }
-
-                    // continue;
-                }
-                free(response);
-
-                response = process_operation(buffer);
-                // if(response == "A"){
-                  send(client_fd,response, 256, 0);
-               
-                bzero(buffer, buffer_len * sizeof(char));
-                last_operation = clock();
-            }
-            exit(0);
-        }
-        else
-        {
-            close(client_fd);
-        }
-    }
-}
-
-
-//----------------------------------------------------------
-void check_status(){
-    sick_file = fopen("sick_file.txt", "r");
-    if (sick_file == NULL) {
-        puts("\nFiles not there\n");
-    }
-    else{
-        char store[200];
-        int total_cases = 0;
-        while (fgets(store, 100, sick_file) != NULL)  {
-            total_cases++;
-        }
-        total_cases == 1 ? printf("\n %d cases stored in the file", total_cases): printf("\n %d cases stored in the file\n", total_cases);
-    }
-}
-/*----------------------------------------------------------------------*/
-void search_details(){
-    //date/name
-    sick_file = fopen("sick_file.txt", "r");
-    char search_name[50];
-    printf("\nSearch by name or date(dd/mm/yy):");
-    scanf("%s", search_name);
-   // printf("Record returned", search_name);
-    char store[200];
-
-    int records = 0;
-    int total_records = 0;
-    puts("\n****************************************");
-    puts("\n");
-    puts("Patient_Name\t\tDate\t\tGender\t\tOfficer_Name");
-    puts("\n");
-
-    while (fgets(store, 100,sick_file) != NULL){
-        total_records++;
-        if (strstr(store, search_name) != NULL){
-            puts(store);
-            records++;
-        }
-    }
-
-    if (records == 0)
-        printf("\nNo records found please re-search\n");
-    else
-    {
-        int i = 0;
-        for (i = 0; i <= total_records; i++){
-            if (records == i){
-                int get_current = records;
-                get_current == 1 ? printf("\n%d record available out of %d\n", get_current, total_records)
-                                   : printf("\n%d records available out of %d\n", get_current, total_records);
-            }
-        }
-    }
-    printf("\n");
-}
-
-
-void add_patient_list(void){
-      patient patients[MAX_PATIENTS];
-   
-    if (number_of_patients == 0){
-        printf("\n No patients yet !!\n");
-       // get_command(display_commands());
-    } else {
-        sick_file = fopen("sick_file.txt", "a+");
-        //loop
-        if (sick_file == NULL)
-        {
-            printf("\nNot found\n");
-        }else{
-            //loop
-            int i;
-            for (i = 0; i < number_of_patients; i++) {
-                fprintf(sick_file, "%s,\t %s,\t\t\t%s,\t%s,\t%s\n", patients[i].patient_fname,patients[i].patient_sname, patients[i].DOI, patients[i].patient_gender, User_name);
-            }
-            printf("\n------ All Patients Added ------\n");
-            number_of_patients = 0;
-            fclose(sick_file);
-        }
-    }
-}
-//----------------------------------------------------
- void add_patient(void){
-   
-    patient patients[MAX_PATIENTS];
-
-    printf("USERNAME");
-    scanf("%s", User_name);
-    char stop,s1[20],s2[]="F",s3[]="M";
-    char a1[20],a2[20],a3[20],a4[20];
-    char d1[20],d2[20];
-    char q1[20],q2[20],p1[]="not",p2[]="yes";
-    int loop;
-    puts("\t\n------- ENTER_PATIENT_INFORMATION ------\n");
-    for (loop = number_of_patients; loop <= MAX_PATIENTS; loop++)
-    {
-        while(1){
-         puts("Name of patient. (BOTH NAMES)");
-         scanf("%s %s", a1,a2);
-         puts("Please re-enter names in order for verification");
-         scanf("%s %s",a3,a4);
-         if(strcmp(a1,a3)!=0 && strcmp(a2,a4)!=0){
-          puts("Error, repeat the names");
-          continue;
-         }
-         else{
-          strcpy(patients[loop].patient_fname,a1);
-          strcpy(patients[loop].patient_sname,a2);
-          break;
-         }
-         }
-               
-        while(1){
-         puts("Gender_of_patient [F or M]");
-         scanf("%s",s1);
-         if(strcmp(s1,s2)!=0 && strcmp(s1,s3)!=0){
-          printf("Re-input gender");
-          continue;
-         }
-         else{
-          strcpy(patients[loop].patient_gender,s1);
-          break;
-         }
-        }
-               
-        while(1){
-         puts("Input Date:format 01/25/2021");
-         scanf("%s", d1);
-         puts("Re-enter date for verification");
-         scanf("%s",d2);
-         if(strcmp(d1,d2)!=0){
-          puts("Error,repeat the date");
-          continue;
-         }
-         else if(ispunct(d1[2])==0 || ispunct(d1[5])==0){
-          puts("Error,repeat the date");
-          continue;
-        }
-         else if(strlen(a1)>10){
-          puts("Error, repeat the date");
-          continue;
-         }
-         else{
-          strcpy(patients[loop].DOI,d1);
-          break;
-         }
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0)
+	{
+		printf("Error in connection.\n");
+		exit(1);
 	}
-         
-        while(1){
-         puts("Asymptomatic/NotAsymptomatic. Please enter not for NotAsypmtomatic or yes for Asymptomatic");
-         scanf("%s",q1);
-         puts("Please re-enter condition");
-         scanf("%s",q2);
-         if(strcmp(q1,p1)!=0 && strcmp(q1,p2)!=0){
-		        puts("Error,repeat");
-		        continue;
-         }
-         else{
-          strcpy(patients[loop].status,q1);
-	  break; 
-         }
-        }
-                 number_of_patients += 1;
-         printf("\n");
-         puts("More patients y/n?");
-        scanf(" %c", &stop);
-        if (stop == 'n' || stop == 'N'){
-            break;
-        }
-        puts("\n -----------NEXT_case-----------\n");
-    }
+	printf("Server Socket is created.\n");
+
+	memset(&serverAddr, '\0', sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(PORT);
+	serverAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+	ret = bind(sockfd, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
+	if (ret < 0)
+	{
+		printf("Binding failed\n");
+		exit(1);
+	}
+	printf("Bind to port %d\n", PORT);
+
+	if (listen(sockfd, 10) == 0)
+	{
+		printf("Server is listening...\n");
+	}
+	else
+	{
+		printf("Failed to listen...\n");
+	}
+
+	while (1)
+	{
+		newSocket = accept(sockfd, (struct sockaddr *)&newAddr, &addr_size);
+		if (newSocket < 0)
+		{
+			exit(1);
+		}
+		printf("Connection accepted from %s:%d\n", inet_ntoa(newAddr.sin_addr), ntohs(newAddr.sin_port));
+
+		if ((childpid = fork()) == 0)
+		{
+			close(sockfd);
+
+			while (1)
+			{
+				bzero(buffer, sizeof(buffer));
+				recv(newSocket, buffer, 1024, 0);
+				int command = extract_command(buffer);
+
+				switch (command)
+				{
+				case 1:
+				{
+					printf("\n\tAddpatient Selected\n\n");
+					if (strcmp(buffer, ":exit") == 0)
+					{
+						printf("Disconnected from %s:%d\n", inet_ntoa(newAddr.sin_addr), ntohs(newAddr.sin_port));
+					}
+					else
+					{
+
+						FILE *filePtr = fopen("enroll.txt", "a+");
+						//printf("[+]Writing to file");
+						fprintf(filePtr, "%s\n", buffer);
+						//printf("[+]wrote to file");
+						printf("RecievedPatient: %s\n", buffer);
+						send(newSocket, "ReceivedSuccessfully", strlen(buffer), 0);
+						//fputs(buffer,filePtr);
+						bzero(buffer, sizeof(buffer));
+					}
+
+					return;
+				}
+
+				case 2:
+
+				{ 
+					printf("\n\t--------Check_status Command-------\n");
+					FILE *filePtr = fopen("enroll.txt", "r");
+					int totalRecords = 0;
+					while (fgets(buffer, 256, filePtr) != NULL)
+					{
+						totalRecords++;
+					}
+					bzero(buffer, sizeof(buffer));
+					if(totalRecords >1){
+					printf("\nTotal cases are %d\n in the file", totalRecords);
+					sprintf(buffer, "Total cases stored in the file  are %d\n", totalRecords);
+					send(newSocket, buffer, strlen(buffer), 0);
+
+					}
+					else if(totalRecords ==0){
+					printf("\nThere are no cases stored yet!!ADD");
+					sprintf(buffer, "No cases !! stored Yet");
+					send(newSocket, buffer, strlen(buffer), 0);
+
+					}
+					else{
+					printf("\nThere is  %d case stored in a file", totalRecords);
+					sprintf(buffer, "There is %d case stored in the file", totalRecords);
+					send(newSocket, buffer, strlen(buffer), 0);
+
+					}
+					return;
+				}
+
+				case 3:
+				{
+					printf("\n\t---------Search Selected------------------------\n");
+					FILE *filePtr = fopen("enroll.txt", "r");
+					// char search_name[50];
+					char store[200];
+					int records = 0;
+					int total_records = 0;
+				
+
+					printf("\n");
+					printf("\nThe search parameter is %s\n", buffer);
+					printf("\n\n");
+
+					printf("\n\n\t----ResultsFound---------\n\n");
+					while (fgets(store, 100, filePtr) != NULL)
+					{
+						total_records++;
+
+						if (strstr(store, buffer) != NULL)
+						{
+							puts(store);
+							//printf('')
+							records++;
+					
+						}
+					}
+					bzero(buffer, sizeof(buffer));
+					if(records ==1  && total_records ==1){
+				      printf("\nWe found %d result out of %d\n", records, total_records);
+					sprintf(buffer, "\n%d Result found  out of %d records\n", records, total_records);
+
+					}
+					else if(records ==0 && total_records>0){
+					printf("\nWe found %d cases  out of %d\n", records, total_records);
+					sprintf(buffer, "\n%d cases foundout of %d records\n", records,total_records);
+
+					}
+					else if(total_records ==0){
+					 printf("\nThe file is empty\n");
+					sprintf(buffer, "No search results found!Empty file");
+					}
+					else{
+					 printf("\nWe found %d result out of %d\n", records, total_records);
+					sprintf(buffer, "\n%d Results found  out of %d records\n", records,total_records);
+
+					}
+
+
+					send(newSocket, buffer, strlen(buffer), 0);
+
+					return;
+				}
+
+				// case 4:
+				// {
+				// 	break;
+				// }
+				case 5:
+				{if (strcmp(buffer, ":exit") == 0)
+					{
+						printf("Disconnected from %s:%d\n", inet_ntoa(newAddr.sin_addr), ntohs(newAddr.sin_port));
+					}
+					else
+					{
+                        
+						printf("\n\tAddpatient filename.txt Selectedn");
+						FILE *filePtr = fopen("enroll.txt", "a+");
+					   //buffer
+						fprintf(filePtr, "%s\n", buffer);
+						//
+						printf("\nClient: %s\n", buffer);
+						send(newSocket, buffer, strlen(buffer), 0);
+						
+						bzero(buffer, sizeof(buffer));
+
+					}
+					return;
+				}
+				}
+			}
+		}
+	}
+
+	close(newSocket);
+
+	//return 0;
+}
+
+int extract_command(char *buffer)
+{
+	if (strncmp(buffer, "Addpatient", 10) == 0)
+	{
+
+		strcpy(buffer, buffer + 11);
+
+		return 1;
+	}
+	else if (strncmp(buffer, "Check_status", 12) == 0)
+	{
+		//printf("Check_status command");
+		return 2;
+	}
+	else if (strncmp(buffer, "Search", 6) == 0)
+	{
+		//Search Mosh
+		strcpy(buffer, buffer + 10);
+		return 3;
+	}
+	else if (strncmp(buffer, "Addpatientlist", 14) == 0)
+	{
+		printf("[+]Addpatientlist");
+		return 4;
+	}
+	else
+	{
+		//printf("Adding from file no command ");
+		return 5;
+	}
 }
